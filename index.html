@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="沿着真实地形阅读中国工农红军长征历史。探索七个重点章节、路线总览与档案。">
+    <meta name="theme-color" content="#24221d">
+    <link rel="icon" href="data:,">
+    <title>长征纪念馆 · 万里见证</title>
+  </head>
+  <body>
+    <a class="skip-link" href="#exhibits">跳至展章</a>
+    <header class="site-header">
+      <div class="site-header__inner">
+        <a class="brand" href="#top">
+          <span class="brand__seal" aria-hidden="true">征</span>
+          <span class="brand__text"><strong>长征纪念馆</strong><span>THE LONG MARCH</span></span>
+        </a>
+        <nav class="site-nav" aria-label="站点导航">
+          <a href="#exhibits">展章导览</a>
+          <a href="#routes">路线总览</a>
+          <a href="#method">史料与方法</a>
+        </nav>
+        <span class="site-header__dates">1934 — 1936</span>
+      </div>
+    </header>
+
+    <main id="top" class="page">
+      <section class="intro" aria-labelledby="page-title">
+        <div>
+          <p class="eyebrow"><span></span> 中国工农红军长征纪念展</p>
+          <h1 id="page-title">万里见证</h1>
+        </div>
+        <p class="intro__text">从湘江河谷到雪山草地，沿着地形与史料，走进七个长征历史现场。</p>
+      </section>
+
+      <section id="exhibits" class="exhibition" aria-label="七个重点展章">
+        <aside class="chapter-nav">
+          <div class="chapter-nav__heading"><h2>展章导览</h2><span>01 — 07</span></div>
+          <nav id="chapter-links" aria-label="展章"></nav>
+          <a class="route-jump" href="#routes"><span>查看路线总览</span><span aria-hidden="true">↗</span></a>
+        </aside>
+
+        <div class="exhibition__body">
+          <div class="chapter" aria-labelledby="chapter-title">
+            <figure class="stage" aria-label="地形展台">
+              <div class="stage__top">
+                <div class="stage__label"><span class="status-dot"></span><span id="stage-label">地形展台</span></div>
+                <div class="segmented" aria-label="地形模式">
+                  <button type="button" data-mode="3d" aria-pressed="true">3D 场景</button>
+                  <button type="button" data-mode="2d" aria-pressed="false">二维地形</button>
+                </div>
+              </div>
+              <div class="stage__viewport" id="stage-viewport">
+                <canvas id="relief-canvas" aria-hidden="true"></canvas>
+                <canvas id="scene-canvas" tabindex="0" aria-label="三维地形。使用方向键旋转，加号或减号缩放。" hidden></canvas>
+                <div class="stage__coordinates" id="stage-coordinates"></div>
+                <div class="compass" aria-hidden="true"><span>N</span><i></i></div>
+                <div id="scene-controls" class="stage__controls" aria-label="三维视角">
+                  <button type="button" data-view="overview" aria-pressed="true">鸟瞰</button>
+                  <button type="button" data-view="ground" aria-pressed="false">地面</button>
+                  <button type="button" data-view="detail" aria-pressed="false">近景</button>
+                  <button type="button" id="reset-view" aria-label="重置三维视角" title="重置视角">↺</button>
+                </div>
+                <div class="stage__variants" id="stage-variants" hidden>
+                  <button type="button" data-variant="primary" aria-pressed="true">夹金山</button>
+                  <button type="button" data-variant="alternate" aria-pressed="false">日干乔湿地</button>
+                </div>
+              </div>
+              <figcaption class="stage__caption">
+                <span id="terrain-status" role="status">正在准备地形</span>
+                <span id="scene-hint">拖动旋转 · 滚轮缩放</span>
+              </figcaption>
+            </figure>
+
+            <div class="chapter__reading">
+              <div class="chapter__index"><span id="chapter-number">01</span><span>长征展章</span></div>
+              <h2 id="chapter-title" tabindex="-1">湘江战役</h2>
+              <p class="chapter__meta"><span id="chapter-date"></span><span id="chapter-location"></span></p>
+              <p id="chapter-summary" class="chapter__summary"></p>
+              <div class="chapter__evidence">
+                <p class="eyebrow">档案里的长征</p>
+                <h3 id="artifact-title"></h3>
+                <p id="artifact-preview"></p>
+                <a id="read-sources" href="#chapter-evidence">查看史料 <span aria-hidden="true">↘</span></a>
+              </div>
+            </div>
+          </div>
+
+          <section class="hotspots" aria-labelledby="hotspot-heading">
+            <div class="hotspots__row">
+              <h2 id="hotspot-heading">场景看点</h2>
+              <div id="hotspot-buttons" class="hotspots__buttons" aria-label="选择场景看点"></div>
+            </div>
+            <p id="hotspot-text" aria-live="polite"></p>
+          </section>
+
+          <section class="timeline" aria-labelledby="timeline-heading">
+            <div class="section-heading timeline__heading">
+              <div><p class="eyebrow">展章内的时间顺序</p><h2 id="timeline-heading">历史时间线</h2></div>
+              <button type="button" id="play-timeline" class="outline-button">▶ 播放时间线</button>
+            </div>
+            <div id="timeline-steps" class="timeline__steps" aria-label="选择时间节点"></div>
+            <div id="timeline-note" class="timeline__note" aria-live="polite">
+              <span id="timeline-note-date"></span>
+              <div><h3 id="timeline-note-title"></h3><p id="timeline-note-text"></p></div>
+            </div>
+          </section>
+
+          <section id="chapter-evidence" class="evidence" aria-labelledby="evidence-heading" tabindex="-1">
+            <div class="section-heading"><div><p class="eyebrow">文献、人物与记忆</p><h2 id="evidence-heading">读懂这一章</h2></div></div>
+            <div class="evidence__grid">
+              <article><h3>历史背景</h3><p id="chapter-context"></p></article>
+              <article><h3>历史影响</h3><p id="chapter-legacy"></p></article>
+              <article id="artifact-panel"><h3 id="artifact-details-title"></h3><p id="artifact-details"></p></article>
+            </div>
+            <div class="evidence__sources"><h3>本章资料</h3><ul id="source-list"></ul></div>
+          </section>
+        </div>
+      </section>
+
+      <section id="routes" class="routes" aria-labelledby="routes-heading">
+        <div class="section-heading">
+          <div><p class="eyebrow">1934 — 1936</p><h2 id="routes-heading">路线总览</h2></div>
+          <p>选择队伍或拖动时间轴，查看各路红军的代表性节点。</p>
+        </div>
+        <div class="routes__panel">
+          <div class="routes__visual">
+            <div class="routes__legend"><span class="dashed-line"></span> 节点之间为示意连线</div>
+            <canvas id="route-map" aria-label="长征主要节点示意图，地点也可在右侧列表选择。" role="img"></canvas>
+          </div>
+          <div class="routes__controls">
+            <div id="route-filters" class="route-filters" aria-label="选择队伍"></div>
+            <label class="route-date" for="route-month">时间 <output id="route-date-value" for="route-month"></output></label>
+            <input type="range" id="route-month" value="24" min="0" max="24">
+            <ol id="route-points" class="route-points" aria-label="时间轴内的地点"></ol>
+          </div>
+        </div>
+        <p class="figure-note">路线按公开史料所载代表节点组织。虚线只连接展览节点，体现大致方位与先后。</p>
+        <details class="route-sources"><summary>路线资料</summary><ul id="route-source-list"></ul></details>
+      </section>
+
+      <section id="method" class="method" aria-labelledby="method-heading">
+        <div class="section-heading"><div><p class="eyebrow">展览说明</p><h2 id="method-heading">史料与方法</h2></div></div>
+        <div class="evidence__grid">
+          <article><h3>现代高程</h3><p>地形基底使用 2000 年采集的 SRTM 数据，由美国地质调查局提供，Mapzen 经 AWS Open Data 分发。<a href="https://registry.opendata.aws/terrain-tiles/">查看数据来源</a></p></article>
+          <article><h3>场景示意</h3><p>建筑、桥、船只、河面与植被以示意模型呈现。场景热点帮助阅读展章叙事，地点与时间以所附史料为准。</p></article>
+          <article><h3>查阅史料</h3><p>各章列出档案馆、纪念馆、博物馆和党史著作来源，方便读者继续查阅。二维模式保留同一套时间线与史料。</p></article>
+        </div>
+      </section>
+      <noscript><p class="noscript">启用 JavaScript 可浏览互动展章。长征史料可查阅<a href="https://www.saac.gov.cn/daj/yaow/202610/47471a679e6f4019ab4a0c7d2a1e02c8.shtml">国家档案局专题</a>。</p></noscript>
+    </main>
+
+    <footer class="site-footer">
+      <div><span class="brand__seal" aria-hidden="true">征</span><strong>长征纪念馆</strong></div>
+      <a href="#top">回到顶部 ↑</a>
+    </footer>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
