@@ -173,13 +173,17 @@ function plotLabels(context, markers, width, height, inset) {
   }
 }
 
-export function createRouteExplorer({ canvas, filters, slider, dateOutput, pointList }, { chapters, onChapter }) {
+export function createRouteExplorer({
+  canvas, filters, slider, dateOutput, pointList, stage, toggle, reset, status,
+}, { chapters, onChapter }) {
   const routes = routeData(chapters);
   const context = canvas.getContext('2d');
   const names = new Map(chapters.map(({ id, title }) => [id, title]));
   let selected = 'all';
   let visible = [];
   let markers = [];
+  let routeStage;
+  let show3D = false;
 
   const buttons = [{ id: 'all', name: '全部队伍' }, ...routes].map(({ id, name, color }) => {
     const button = document.createElement('button');
@@ -291,7 +295,8 @@ export function createRouteExplorer({ canvas, filters, slider, dateOutput, point
     }
     pointList.replaceChildren(...rows);
     pointList.scrollTop = 0;
-    draw();
+    if (show3D) routeStage.update(visible);
+    else draw();
   }
 
   function hit(event) {
@@ -317,4 +322,76 @@ export function createRouteExplorer({ canvas, filters, slider, dateOutput, point
   slider.addEventListener('input', update);
   new ResizeObserver(draw).observe(canvas);
   update();
+
+  if (stage) {
+    let inView = false;
+    let attempted = false;
+    let disposed = false;
+    const terrainRequest = new AbortController();
+    const stageObserver = new IntersectionObserver(([entry]) => {
+      inView = entry.isIntersecting;
+      if (routeStage) routeStage.setActive(inView && show3D);
+      if (inView && !attempted) {
+        attempted = true;
+        void loadStage();
+      }
+    }, { rootMargin: '90px' });
+    stageObserver.observe(canvas.parentElement);
+
+    function setMode(use3D) {
+      show3D = use3D;
+      stage.hidden = !use3D;
+      canvas.hidden = use3D;
+      if (toggle) toggle.textContent = use3D ? '查看二维路线' : '查看三维沙盘';
+      if (reset) reset.hidden = !use3D;
+      if (status) {
+        if (!use3D) status.textContent = '二维路线图';
+        else if (routeStage.source) status.textContent = '三维沙盘 · Mapzen 现代区域高程（高差放大）';
+        else status.textContent = '三维示意沙盘 · 示意地表';
+      }
+      if (routeStage) {
+        routeStage.setActive(use3D && inView);
+        if (use3D) routeStage.update(visible);
+      }
+      if (!use3D) draw();
+    }
+
+    function useFallback() {
+      routeStage?.dispose();
+      routeStage = undefined;
+      setMode(false);
+      if (toggle) toggle.hidden = true;
+      if (status) status.textContent = '三维不可用，已显示二维路线';
+      stageObserver.disconnect();
+    }
+
+    async function loadStage() {
+      try {
+        const terrain = fetch(`${import.meta.env.BASE_URL}terrain/overview.json`, { signal: terrainRequest.signal })
+          .then((response) => response.ok ? response.json() : null)
+          .catch(() => null);
+        const [{ createRouteStage }, data] = await Promise.all([import('./route-stage.js'), terrain]);
+        if (disposed) return;
+        routeStage = createRouteStage(stage, { bounds, terrain: data, onChapter, onUnavailable: useFallback });
+        if (!routeStage) {
+          useFallback();
+          return;
+        }
+        if (toggle) toggle.hidden = false;
+        setMode(true);
+      } catch {
+        useFallback();
+      }
+    }
+
+    toggle?.addEventListener('click', () => setMode(!show3D));
+    reset?.addEventListener('click', () => routeStage?.reset());
+    window.addEventListener('pagehide', (event) => {
+      if (event.persisted) return;
+      disposed = true;
+      stageObserver.disconnect();
+      terrainRequest.abort();
+      routeStage?.dispose();
+    });
+  }
 }

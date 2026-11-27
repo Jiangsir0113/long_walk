@@ -1,5 +1,6 @@
 import './style.css';
 import { chapters } from './chapters.js';
+import { exhibitPhases } from './exhibit-phases.js';
 import { createRelief } from './relief.js';
 import { createRouteExplorer, routeSources } from './routes.js';
 
@@ -12,6 +13,11 @@ const terrainStatus = byId('terrain-status');
 const chapterLinks = byId('chapter-links');
 const timelineSteps = byId('timeline-steps');
 const playTimeline = byId('play-timeline');
+const phaseScrub = byId('phase-scrub');
+const playSpeed = byId('play-speed');
+const sandTable = byId('sand-table');
+const sequence = chapters.flatMap(item => item.timeline.map((_, step) => ({ chapter: item, step })));
+phaseScrub.max = sequence.length;
 const hotspotButtons = byId('hotspot-buttons');
 const variants = byId('stage-variants');
 const modeButtons = document.querySelectorAll('[data-mode]');
@@ -38,7 +44,12 @@ let variant = 'primary';
 let view = 'overview';
 let activeStep = 0;
 let activeHotspot = -1;
-let playback;
+let playing = false;
+let playbackTimer;
+const phaseDuration = 7000;
+let remainingDuration = phaseDuration;
+let clockStartedAt;
+let clockRate = 1;
 let reliefState;
 let sceneState = { status: 'loading' };
 
@@ -58,8 +69,15 @@ function appendText(parent, tag, value, className) {
   return element;
 }
 
-function chapterIdFromHash() {
-  return /^#chapter-([a-z-]+)$/.exec(location.hash)?.[1];
+function phaseFromHash() {
+  const match = /^#chapter-([a-z-]+)(?:\/(\d+))?$/.exec(location.hash);
+  if (!match) return undefined;
+  const item = chapters.find(entry => entry.id === match[1]);
+  if (item) return { chapter: item, step: Math.min(item.timeline.length - 1, Math.max(0, Number(match[2] ?? 1) - 1)) };
+}
+
+function phaseHash(item, step) {
+  return '#chapter-' + item.id + (step ? '/' + (step + 1) : '');
 }
 
 function updateCoordinates() {
@@ -83,7 +101,7 @@ function updateStage() {
     relief.paint();
   }
   pressed(modeButtons, (button) => button.dataset.mode === mode);
-  text('stage-label', visible3d ? '三维地形展台' : '地形展台');
+  text('stage-label', visible3d ? '三维沙盘' : '地形图');
   text('scene-hint', visible3d ? '拖动旋转 · 滚轮缩放 · 选择编号看点' : '上北 · 选中下方看点继续阅读');
   const source = visible3d ? sceneState.source : reliefState?.source;
   terrainStatus.replaceChildren();
@@ -122,7 +140,8 @@ const relief = createRelief(reliefCanvas, (state) => {
 
 function setHotspot(index) {
   if (!chapter.hotspots[index]) return;
-  if (chapter.id === 'snow-grass') setVariant(index === 0 ? 'primary' : 'alternate');
+  stopPlayback();
+  if (chapter.id === 'snow-grass' && activeStep !== index) seekTo(sequenceIndex() - activeStep + index);
   activeHotspot = index;
   pressed(hotspotButtons.children, (_, current) => index === current);
   text('hotspot-text', chapter.hotspots[index].text);
@@ -146,6 +165,7 @@ async function startScene() {
     sceneInit = import('./scene.js')
       .then(({ createTerrainStage }) => createTerrainStage(sceneCanvas, {
         onHotspot: setHotspot,
+        background: '#303631',
         onOrientation(angle) {
           if (!sceneCanvas.hidden) stageViewport.style.setProperty('--north-angle', angle + 'deg');
         },
@@ -154,12 +174,14 @@ async function startScene() {
           sceneState = state;
           if (state.status === 'unavailable') mode = '2d';
           updateStage();
+          schedulePlayback();
         },
       }))
       .catch(() => {
         sceneState = { status: 'unavailable' };
         mode = '2d';
         updateStage();
+        schedulePlayback();
       });
   }
   scene = await sceneInit;
@@ -169,6 +191,8 @@ async function startScene() {
   sceneKey = key;
   await scene.setChapter(chapter, { variant });
   if (sceneKey === key) {
+    scene.setPlaying(playing && mode === '3d', Number(playSpeed.value));
+    scene.setPhase(activeStep);
     scene.setView(view);
     scene.setActiveHotspot(activeHotspot);
   }
@@ -193,6 +217,7 @@ function setMode(nextMode) {
   }
   updateStage();
   if (mode === '3d') void startScene();
+  schedulePlayback();
 }
 
 function setVariant(nextVariant) {
@@ -200,48 +225,93 @@ function setVariant(nextVariant) {
   variant = nextVariant;
   activeHotspot = -1;
   pressed(hotspotButtons.children, () => false);
-  text('hotspot-text', '选择场景中的编号或上方看点，查看对应说明。');
+  text('hotspot-text', '');
   pressed(variantButtons, (item) => item.dataset.variant === variant);
   loadTerrain();
 }
 
 function setTimeline(index, updateView = true) {
   const event = chapter.timeline[index];
+  const phase = exhibitPhases[chapter.id][index];
   activeStep = index;
+  const cursor = sequenceIndex();
+  phaseScrub.value = cursor + 1;
+  phaseScrub.setAttribute('aria-valuetext', chapter.title + '，' + event.title + '，全程第' + (cursor + 1) + '幕');
+  text('phase-count', (cursor + 1) + ' / ' + sequence.length + ' 幕');
+  byId('previous-phase').disabled = cursor === 0;
+  byId('next-phase').disabled = cursor === sequence.length - 1;
   pressed(timelineSteps.children, (_, current) => index === current);
   text('timeline-note-date', event.date);
   text('timeline-note-title', event.title);
   text('timeline-note-text', event.text);
-  if (updateView) {
-    if (chapter.id === 'snow-grass') setVariant(index === 0 ? 'primary' : 'alternate');
-    if (!playback || !reducedMotion.matches) setView(timelineViews[chapter.id][index]);
+  text('phase-caption', phase.caption);
+  activeHotspot = -1;
+  pressed(hotspotButtons.children, () => false);
+  text('hotspot-text', '');
+  scene?.setActiveHotspot(-1);
+  if (updateView && phase.variant) setVariant(phase.variant);
+  if (sceneKey === selectionKey()) scene?.setPhase(index);
+  if (updateView && (!playing || !reducedMotion.matches)) setView(timelineViews[chapter.id][index]);
+  playTimeline.textContent = playing ? 'Ⅱ 暂停推演' : cursor === sequence.length - 1 ? '↺ 从头播放' : '▶ 播放推演';
+  schedulePlayback(true);
+}
+
+function sequenceIndex() {
+  return sequence.findIndex(item => item.chapter === chapter && item.step === activeStep);
+}
+
+function seekTo(cursor) {
+  const target = sequence[cursor];
+  if (!target) return;
+  if (target.chapter === chapter) setTimeline(target.step);
+  else renderChapter(target.chapter, target.step);
+  history.replaceState(null, '', phaseHash(target.chapter, target.step));
+}
+
+function schedulePlayback(reset = false) {
+  clearTimeout(playbackTimer);
+  if (clockStartedAt !== undefined) {
+    remainingDuration = Math.max(0, remainingDuration - (performance.now() - clockStartedAt) * clockRate);
+    clockStartedAt = undefined;
   }
+  if (reset) remainingDuration = phaseDuration;
+  clockRate = Number(playSpeed.value);
+  const running = playing && !document.hidden && !(mode === '3d' && sceneState.status === 'loading');
+  scene?.setPlaying(running && mode === '3d', clockRate);
+  if (!running) return;
+  clockStartedAt = performance.now();
+  playbackTimer = setTimeout(() => {
+    const next = sequenceIndex() + 1;
+    if (next === sequence.length) stopPlayback();
+    else seekTo(next);
+  }, remainingDuration / clockRate);
 }
 
 function stopPlayback() {
-  clearInterval(playback);
-  playback = undefined;
-  playTimeline.textContent = '▶ 播放时间线';
+  playing = false;
+  schedulePlayback();
+  playTimeline.textContent = sequenceIndex() === sequence.length - 1 ? '↺ 从头播放' : '▶ 播放推演';
 }
 
 function togglePlayback() {
-  if (playback) {
+  if (playing) {
     stopPlayback();
     return;
   }
-  if (activeStep === chapter.timeline.length - 1) setTimeline(0);
-  playTimeline.textContent = 'Ⅱ 暂停时间线';
-  playback = setInterval(() => {
-    setTimeline(activeStep + 1);
-    if (activeStep === chapter.timeline.length - 1) stopPlayback();
-  }, 2800);
+  if (sequenceIndex() === sequence.length - 1) seekTo(0);
+  playing = true;
+  playTimeline.textContent = 'Ⅱ 暂停推演';
+  schedulePlayback();
 }
 
-function renderChapter(nextChapter) {
-  if (chapter === nextChapter) return;
+function renderChapter(nextChapter, step = 0) {
+  if (chapter === nextChapter) {
+    setTimeline(step);
+    return;
+  }
   chapter = nextChapter;
-  stopPlayback();
-  variant = 'primary';
+  sceneKey = undefined;
+  variant = exhibitPhases[chapter.id][step].variant ?? 'primary';
   activeHotspot = -1;
   pressed(variantButtons, (button) => button.dataset.variant === variant);
   variants.hidden = chapter.id !== 'snow-grass';
@@ -257,9 +327,7 @@ function renderChapter(nextChapter) {
   text('chapter-summary', chapter.summary);
   text('chapter-context', chapter.context);
   text('chapter-legacy', chapter.legacy);
-  text('artifact-title', chapter.artifact.title);
   text('artifact-details-title', chapter.artifact.title);
-  text('artifact-preview', chapter.artifact.text);
   text('artifact-details', chapter.artifact.text);
 
   const sources = byId('source-list');
@@ -281,11 +349,10 @@ function renderChapter(nextChapter) {
     appendText(button, 'strong', event.title);
     button.addEventListener('click', () => {
       stopPlayback();
-      setTimeline(index);
+      seekTo(sequenceIndex() - activeStep + index);
     });
     timelineSteps.append(button);
   });
-  setTimeline(0, false);
   hotspotButtons.replaceChildren();
   chapter.hotspots.forEach((hotspot, index) => {
     const button = document.createElement('button');
@@ -296,14 +363,16 @@ function renderChapter(nextChapter) {
     button.addEventListener('click', () => setHotspot(index));
     hotspotButtons.append(button);
   });
-  text('hotspot-text', '选择场景中的编号或上方看点，查看对应说明。');
   loadTerrain();
+  setTimeline(step, false);
+  if (step && (!playing || !reducedMotion.matches)) setView(timelineViews[chapter.id][step]);
 }
 
 function goToChapter(id, focus = true) {
   const nextChapter = chapters.find((item) => item.id === id);
   if (!nextChapter) return;
   const hash = '#chapter-' + id;
+  stopPlayback();
   if (location.hash !== hash) history.pushState(null, '', hash);
   renderChapter(nextChapter);
   if (focus) {
@@ -335,39 +404,71 @@ modeButtons.forEach((button) => {
   button.addEventListener('click', () => setMode(button.dataset.mode));
 });
 viewButtons.forEach((button) => {
-  button.addEventListener('click', () => setView(button.dataset.view));
+  button.addEventListener('click', () => {
+    stopPlayback();
+    setView(button.dataset.view);
+  });
 });
 variantButtons.forEach((button) => {
-  button.addEventListener('click', () => setVariant(button.dataset.variant));
+  button.addEventListener('click', () => {
+    if (variant === button.dataset.variant) return;
+    stopPlayback();
+    seekTo(sequenceIndex() - activeStep + (button.dataset.variant === 'primary' ? 0 : 1));
+  });
 });
 byId('reset-view').addEventListener('click', () => {
+  stopPlayback();
   resetViewButtons();
   scene?.resetView();
 });
 playTimeline.addEventListener('click', togglePlayback);
-byId('read-sources').addEventListener('click', (event) => {
-  if (event.button || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
-  event.preventDefault();
-  const evidence = byId('chapter-evidence');
-  evidence.focus({ preventScroll: true });
-  evidence.scrollIntoView({ block: 'start' });
+phaseScrub.addEventListener('input', () => {
+  stopPlayback();
+  seekTo(Number(phaseScrub.value) - 1);
+});
+for (const [id, delta] of [['previous-phase', -1], ['next-phase', 1]]) {
+  byId(id).addEventListener('click', () => {
+    stopPlayback();
+    seekTo(sequenceIndex() + delta);
+  });
+}
+playSpeed.addEventListener('change', () => schedulePlayback());
+for (const eventName of ['pointerdown', 'wheel', 'keydown']) {
+  sceneCanvas.addEventListener(eventName, () => { if (playing) stopPlayback(); }, { passive: true });
+}
+const expandStage = byId('expand-stage');
+expandStage.hidden = !document.fullscreenEnabled || !sandTable.requestFullscreen;
+expandStage.addEventListener('click', async () => {
+  try {
+    if (document.fullscreenElement === sandTable) await document.exitFullscreen();
+    else await sandTable.requestFullscreen();
+  } catch {
+    text('scene-hint', '浏览器暂时无法进入全屏，可继续在本页操作。');
+  }
+});
+document.addEventListener('fullscreenchange', () => {
+  expandStage.textContent = document.fullscreenElement === sandTable ? '退出全屏' : '全屏';
 });
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) stopPlayback();
 });
 window.addEventListener('popstate', () => {
-  const id = chapterIdFromHash();
-  if (id) renderChapter(chapters.find((item) => item.id === id) ?? chapters[0]);
+  stopPlayback();
+  const target = phaseFromHash();
+  if (target) renderChapter(target.chapter, target.step);
   else if (!location.hash) renderChapter(chapters[0]);
 });
 window.addEventListener('hashchange', () => {
-  const id = chapterIdFromHash();
-  if (id) goToChapter(id, false);
+  const target = phaseFromHash();
+  if (target && (chapter !== target.chapter || activeStep !== target.step)) {
+    stopPlayback();
+    renderChapter(target.chapter, target.step);
+  }
 });
 
-const initialChapter = chapters.find((item) => item.id === chapterIdFromHash());
-renderChapter(initialChapter ?? chapters[0]);
-if (initialChapter) stageViewport.closest('.chapter').scrollIntoView({ block: 'start' });
+const initial = phaseFromHash();
+renderChapter(initial?.chapter ?? chapters[0], initial?.step ?? 0);
+if (initial) sandTable.scrollIntoView({ block: 'start' });
 
 const visibility = new IntersectionObserver((entries) => {
   if (!entries.some((entry) => entry.isIntersecting)) return;
@@ -377,8 +478,17 @@ const visibility = new IntersectionObserver((entries) => {
 }, { rootMargin: '120px' });
 visibility.observe(stageViewport);
 
+const playbackVisibility = new IntersectionObserver(([entry]) => {
+  if (!entry.isIntersecting && playing) stopPlayback();
+});
+playbackVisibility.observe(sandTable);
+
 createRouteExplorer({
   canvas: byId('route-map'),
+  stage: byId('route-stage'),
+  toggle: byId('route-view-toggle'),
+  reset: byId('route-view-reset'),
+  status: byId('route-view-status'),
   filters: byId('route-filters'),
   slider: byId('route-month'),
   dateOutput: byId('route-date-value'),

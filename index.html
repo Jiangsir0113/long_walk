@@ -31,30 +31,33 @@
           <p class="eyebrow"><span></span> 中国工农红军长征纪念展</p>
           <h1 id="page-title">万里见证</h1>
         </div>
-        <p class="intro__text">从湘江河谷到雪山草地，沿着地形与史料，走进七个长征历史现场。</p>
+        <p class="intro__text">在三维沙盘上，从湘江走到雪山草地。可连续观看七章，也可拖动进度，停在任意一幕。</p>
       </section>
 
       <section id="exhibits" class="exhibition" aria-label="七个重点展章">
         <aside class="chapter-nav">
-          <div class="chapter-nav__heading"><h2>展章导览</h2><span>01 — 07</span></div>
+          <div class="chapter-nav__heading"><h2>沙盘目录</h2><span>01 — 07</span></div>
           <nav id="chapter-links" aria-label="展章"></nav>
           <a class="route-jump" href="#routes"><span>查看路线总览</span><span aria-hidden="true">↗</span></a>
         </aside>
 
         <div class="exhibition__body">
           <div class="chapter" aria-labelledby="chapter-title">
-            <figure class="stage" aria-label="地形展台">
+            <figure class="stage" id="sand-table" aria-labelledby="chapter-title">
               <div class="stage__top">
-                <div class="stage__label"><span class="status-dot"></span><span id="stage-label">地形展台</span></div>
-                <div class="segmented" aria-label="地形模式">
-                  <button type="button" data-mode="3d" aria-pressed="true">3D 场景</button>
-                  <button type="button" data-mode="2d" aria-pressed="false">二维地形</button>
+                <div class="table-title">
+                  <span class="chapter-counter" id="chapter-number">01</span>
+                  <div><h2 id="chapter-title" tabindex="-1">湘江战役</h2><p><span id="chapter-date"></span> · <span id="chapter-location"></span></p></div>
                 </div>
+                <div class="stage-tools"><div class="segmented" aria-label="地形模式">
+                  <button type="button" data-mode="3d" aria-pressed="true">3D 沙盘</button>
+                  <button type="button" data-mode="2d" aria-pressed="false">二维地形</button>
+                </div><button type="button" id="expand-stage" class="stage-expand" hidden>全屏</button></div>
               </div>
               <div class="stage__viewport" id="stage-viewport">
                 <canvas id="relief-canvas" aria-hidden="true"></canvas>
                 <canvas id="scene-canvas" tabindex="0" aria-label="三维地形。使用方向键旋转，加号或减号缩放。" hidden></canvas>
-                <div class="stage__coordinates" id="stage-coordinates"></div>
+                <div class="stage__coordinates"><span id="stage-label">历史沙盘</span> <span id="stage-coordinates"></span></div>
                 <div class="compass" aria-hidden="true"><span>N</span><i></i></div>
                 <div id="scene-controls" class="stage__controls" aria-label="三维视角">
                   <button type="button" data-view="overview" aria-pressed="true">鸟瞰</button>
@@ -67,48 +70,34 @@
                   <button type="button" data-variant="alternate" aria-pressed="false">日干乔湿地</button>
                 </div>
               </div>
+              <div class="transport" aria-label="沙盘推演控制">
+                <div class="transport__actions">
+                  <button type="button" id="play-timeline" class="transport__play">▶ 播放推演</button>
+                  <button type="button" id="previous-phase" aria-label="上一幕">上一幕</button>
+                  <button type="button" id="next-phase" aria-label="下一幕">下一幕</button>
+                  <label class="speed-control">速度 <select id="play-speed" aria-label="推演播放速度"><option value="1">1×</option><option value="1.5">1.5×</option><option value="2">2×</option></select></label>
+                </div>
+                <div class="transport__progress"><label for="phase-scrub">全程进度</label><input type="range" id="phase-scrub" min="1" max="21" value="1" step="1"><output for="phase-scrub" id="phase-count">1 / 21 幕</output></div>
+              </div>
+              <div class="phase-reader" id="timeline-note" aria-live="polite" aria-atomic="true">
+                <div class="phase-heading"><span id="timeline-note-date"></span><h3 id="timeline-note-title"></h3></div>
+                <div><p id="phase-caption"></p><p id="timeline-note-text"></p></div>
+              </div>
+              <div id="timeline-steps" class="timeline__steps" aria-label="选择本章幕次"></div>
+              <div class="hotspots">
+                <div class="hotspots__row"><h3>场景看点</h3><div id="hotspot-buttons" class="hotspots__buttons" aria-label="选择场景看点"></div></div>
+                <p id="hotspot-text" aria-live="polite"></p>
+              </div>
               <figcaption class="stage__caption">
                 <span id="terrain-status" role="status">正在准备地形</span>
                 <span id="scene-hint">拖动旋转 · 滚轮缩放</span>
               </figcaption>
             </figure>
 
-            <div class="chapter__reading">
-              <div class="chapter__index"><span id="chapter-number">01</span><span>长征展章</span></div>
-              <h2 id="chapter-title" tabindex="-1">湘江战役</h2>
-              <p class="chapter__meta"><span id="chapter-date"></span><span id="chapter-location"></span></p>
-              <p id="chapter-summary" class="chapter__summary"></p>
-              <div class="chapter__evidence">
-                <p class="eyebrow">档案里的长征</p>
-                <h3 id="artifact-title"></h3>
-                <p id="artifact-preview"></p>
-                <a id="read-sources" href="#chapter-evidence">查看史料 <span aria-hidden="true">↘</span></a>
-              </div>
-            </div>
           </div>
 
-          <section class="hotspots" aria-labelledby="hotspot-heading">
-            <div class="hotspots__row">
-              <h2 id="hotspot-heading">场景看点</h2>
-              <div id="hotspot-buttons" class="hotspots__buttons" aria-label="选择场景看点"></div>
-            </div>
-            <p id="hotspot-text" aria-live="polite"></p>
-          </section>
-
-          <section class="timeline" aria-labelledby="timeline-heading">
-            <div class="section-heading timeline__heading">
-              <div><p class="eyebrow">展章内的时间顺序</p><h2 id="timeline-heading">历史时间线</h2></div>
-              <button type="button" id="play-timeline" class="outline-button">▶ 播放时间线</button>
-            </div>
-            <div id="timeline-steps" class="timeline__steps" aria-label="选择时间节点"></div>
-            <div id="timeline-note" class="timeline__note" aria-live="polite">
-              <span id="timeline-note-date"></span>
-              <div><h3 id="timeline-note-title"></h3><p id="timeline-note-text"></p></div>
-            </div>
-          </section>
-
           <section id="chapter-evidence" class="evidence" aria-labelledby="evidence-heading" tabindex="-1">
-            <div class="section-heading"><div><p class="eyebrow">文献、人物与记忆</p><h2 id="evidence-heading">读懂这一章</h2></div></div>
+            <div class="section-heading"><div><p class="eyebrow">文献、人物与记忆</p><h2 id="evidence-heading">本章史料</h2></div><p id="chapter-summary"></p></div>
             <div class="evidence__grid">
               <article><h3>历史背景</h3><p id="chapter-context"></p></article>
               <article><h3>历史影响</h3><p id="chapter-legacy"></p></article>
@@ -126,7 +115,11 @@
         </div>
         <div class="routes__panel">
           <div class="routes__visual">
-            <div class="routes__legend"><span class="dashed-line"></span> 节点之间为示意连线</div>
+            <div class="routes__legend"><span id="route-view-status" role="status">二维路线图</span>
+              <button id="route-view-toggle" type="button" hidden>查看二维路线</button>
+              <button id="route-view-reset" type="button" hidden>重置沙盘视角</button>
+            </div>
+            <div id="route-stage" hidden></div>
             <canvas id="route-map" aria-label="长征主要节点示意图，地点也可在右侧列表选择。" role="img"></canvas>
           </div>
           <div class="routes__controls">
@@ -143,7 +136,7 @@
       <section id="method" class="method" aria-labelledby="method-heading">
         <div class="section-heading"><div><p class="eyebrow">展览说明</p><h2 id="method-heading">史料与方法</h2></div></div>
         <div class="evidence__grid">
-          <article><h3>现代高程</h3><p>地形基底使用 2000 年采集的 SRTM 数据，由美国地质调查局提供，Mapzen 经 AWS Open Data 分发。<a href="https://registry.opendata.aws/terrain-tiles/">查看数据来源</a></p></article>
+          <article><h3>现代高程</h3><p>七章使用 2000 年采集的 SRTM 局部高程。全程沙盘使用 GMTED2010 / ETOPO1 区域网格，放大高差以呈现山系。数据经 Mapzen 与 AWS Open Data 分发。<a href="https://registry.opendata.aws/terrain-tiles/">查看数据来源</a></p></article>
           <article><h3>场景示意</h3><p>建筑、桥、船只、河面与植被以示意模型呈现。场景热点帮助阅读展章叙事，地点与时间以所附史料为准。</p></article>
           <article><h3>查阅史料</h3><p>各章列出档案馆、纪念馆、博物馆和党史著作来源，方便读者继续查阅。二维模式保留同一套时间线与史料。</p></article>
         </div>

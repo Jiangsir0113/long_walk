@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { exhibitPhases } from './exhibit-phases.js';
 
 const themeByKind = {
   river: { colors: [0x636747, 0x8b8b61, 0xb8a770], water: 0x7e9b90, axis: 'z', relief: 0.66 },
@@ -15,6 +16,18 @@ const themeByKind = {
 const clamp = THREE.MathUtils.clamp;
 const mix = THREE.MathUtils.lerp;
 const defaultSource = { name: '三维地貌示意', attribution: '地形数据暂不可用，当前场景为示意。' };
+
+const neutralLight = [0xffedd5, 0xffe5be, 0xffecd2];
+const sceneLighting = {
+  river: [0xffedd5, 0xffe0b0, 0xf6ca96],
+  hall: [0xffe6bf, 0xffd6a4, 0xf6e6cb],
+  canyon: [0xffe7c3, 0xffddb5, 0xf9d69e],
+  crossing: [0xffedd5, 0xffe4b8, 0xffdbad],
+  ferry: [0xffedd5, 0xffd9a4, 0xf2e9d3],
+  bridge: [0xffedd5, 0xffdfb6, 0xf3e8d8],
+  snow: [0xdeedff, 0xdfeeff, 0xe8f0ff],
+  grass: [0xebedd4, 0xe6eacb, 0xf6daa9],
+};
 
 function makeSchematic(chapter, theme) {
   const width = 49;
@@ -228,8 +241,8 @@ function makeSurveyLine(terrain, theme) {
 function makeLandmark(terrain, chapter, water) {
   const { group, heightAt, focusX, focusZ } = terrain;
   const building = new THREE.Group();
-  let x = water?.x ?? focusX;
-  let z = water?.z ?? focusZ;
+  const x = water?.x ?? focusX;
+  const z = water?.z ?? focusZ;
   let y = water?.y ?? heightAt(x, z);
   const box = new THREE.BoxGeometry(1, 1, 1);
   const wood = new THREE.MeshLambertMaterial({ color: 0x755136 });
@@ -307,17 +320,6 @@ function makeLandmark(terrain, chapter, water) {
       building.add(new THREE.Mesh(new THREE.TubeGeometry(chain, 24, 0.012, 5, false), slate));
     }
     if (!water.acrossX) building.rotation.y = Math.PI / 2;
-  } else if (['crossing', 'ferry'].includes(chapter.kind) && water) {
-    const [a, b] = water.acrossX ? [0, 1] : [1, 0];
-    x += a * 0.22;
-    z += b * 0.22;
-    y += 0.02;
-    const hull = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.08, 0.09, 8), wood);
-    hull.scale.set(1, 1, 2.25);
-    building.add(hull);
-    addBox(0, 0.055, 0, 0.25, 0.02, 0.57, brick);
-    for (const position of [-0.19, 0, 0.19]) addBox(0, 0.081, position, 0.27, 0.03, 0.05, wood);
-    if (!water.acrossX) building.rotation.y = Math.PI / 2;
   }
   building.position.set(x, y, z);
   if (building.children.length) group.add(building);
@@ -328,6 +330,321 @@ function makeLandmark(terrain, chapter, water) {
     }
   }
   return { x, y, z };
+}
+
+function exhibitBuilder() {
+  const geometry = new Map();
+  const materials = new Map();
+  const body = (parent, shape, tint, position, size, yaw = 0) => {
+    if (!materials.has(tint)) materials.set(tint, new THREE.MeshLambertMaterial({ color: tint }));
+    if (!geometry.has(shape)) {
+      const shapes = {
+        box: () => new THREE.BoxGeometry(1, 1, 1),
+        stone: () => new THREE.DodecahedronGeometry(0.55),
+        post: () => new THREE.CylinderGeometry(0.5, 0.5, 1, 10),
+        ring: () => new THREE.TorusGeometry(0.5, 0.09, 7, 18),
+        guide: () => new THREE.TorusGeometry(0.51, 0.024, 6, 26),
+      };
+      geometry.set(shape, shapes[shape]());
+    }
+    const object = new THREE.Mesh(geometry.get(shape), materials.get(tint));
+    object.position.set(...position);
+    object.scale.set(...size);
+    object.rotation.y = yaw;
+    parent.add(object);
+    return object;
+  };
+  return { body, box: (parent, tint, position, size, yaw) => body(parent, 'box', tint, position, size, yaw) };
+}
+
+function addCabinet(terrain, chapter) {
+  const { spanX, spanZ, group } = terrain;
+  const plinth = new THREE.Group();
+  const { body, box } = exhibitBuilder();
+  const shadow = new THREE.Mesh(new THREE.PlaneGeometry(spanX + 4.6, spanZ + 4.6), new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    vertexShader: `varying vec2 coordinate;
+      void main() {
+        coordinate = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }`,
+    fragmentShader: `varying vec2 coordinate;
+      void main() {
+        vec2 offset = abs(coordinate - vec2(0.5)) * 2.0;
+        float outline = pow(pow(offset.x, 8.0) + pow(offset.y, 8.0), 0.125);
+        float opacity = 0.61 * (1.0 - smoothstep(0.69, 0.97, outline));
+        gl_FragColor = vec4(0.04, 0.03, 0.026, opacity);
+      }`,
+  }));
+  shadow.rotation.x = -Math.PI / 2;
+  shadow.position.set(0.22, -1.08, 0.33);
+  plinth.add(shadow);
+  box(plinth, 0x372824, [0, -0.77, 0], [spanX + 0.86, 0.31, spanZ + 0.86]);
+  box(plinth, 0x57362c, [0, -0.53, 0], [spanX + 0.61, 0.25, spanZ + 0.61]);
+  box(plinth, 0xac8149, [0, -0.40, 0], [spanX + 0.57, 0.046, spanZ + 0.57]);
+  box(plinth, 0x6a4833, [0, -0.36, 0], [spanX + 0.48, 0.045, spanZ + 0.48]);
+  for (const direction of [-1, 1]) {
+    for (const x of [-1, 1]) {
+      body(plinth, 'post', 0x8b693e, [x * (spanX / 2 - 0.52), -0.975, direction * (spanZ / 2 - 0.52)], [0.61, 0.17, 0.61]);
+    }
+  }
+  for (let index = -4; index <= 4; index += 1) {
+    const size = index % 2 === 0 ? 0.12 : 0.07;
+    box(plinth, 0xc6a76c, [index * spanX / 10, -0.332, spanZ / 2 + 0.18], [0.018, 0.018, size]);
+    box(plinth, 0xc6a76c, [spanX / 2 + 0.18, -0.332, index * spanZ / 10], [size, 0.018, 0.018]);
+  }
+  box(plinth, 0xbd985d, [spanX * 0.29, -0.73, spanZ / 2 + 0.44], [1.18, 0.16, 0.028]);
+  for (const side of [-1, 1]) {
+    body(plinth, 'post', 0x6a4833, [spanX * 0.29 + side * 0.48, -0.73, spanZ / 2 + 0.46], [0.038, 0.02, 0.038]).rotation.x = Math.PI / 2;
+  }
+  const marks = Number(chapter.number) || 1;
+  for (let index = 0; index < marks; index += 1) {
+    box(plinth, 0x805631, [spanX * 0.29 + (index - (marks - 1) / 2) * 0.067, -0.73, spanZ / 2 + 0.46], [0.022, 0.066, 0.017]);
+  }
+  group.add(plinth);
+}
+
+const phaseLayouts = {
+  'river-bends': [['house', 1.65, 0.78, 0.93], ['house', 2.62, 1.13, 0.69, -0.12], ['fields', -1.5, 0.8, 1.4]],
+  'ferry-stones': [['steps', 0.69, 0.1, 1.27], ['boat', 0, 0.78, 0.87], ['house', 1.55, 0.9, 0.75]],
+  'memorial-lantern': [['lantern', 1, 0.05, 1.34], ['lantern', 1.67, 0.35, 0.81], ['lantern', 2.2, 0.43, 0.63], ['marker', 0.64, 0.56, 0.67]],
+  'residence-windows': [['house', -1.9, -0.43, 0.9], ['house', -1.89, 0.88, 0.73], ['door', 0.23, 0.98, 1.18]],
+  'meeting-table': [['papers', 0, 0.18, 0.43, 0.02, 1.24], ['lantern', 0.38, 0.11, 0.21, 0, 1.24], ['chair', 0.76, 0.2, 0.52, -1.57, 0.99]],
+  'document-desk': [['desk', 0.15, 1.21, 1.14, -0.19], ['papers', -0.11, 0.05, 0.51, -0.2, 1.24]],
+  'tucheng-ferry': [['steps', 0.63, 0.21, 0.98], ['boat', 0.04, 0.82, 0.8], ['house', 1.38, 0.6, 0.77]],
+  'river-settlement': [['house', 1.15, 0.36, 1.09], ['house', 2.05, 0.77, 0.81], ['house', 2.68, -0.27, 0.66, -0.18], ['house', 1.9, -0.88, 0.67]],
+  'tucheng-memorial': [['marker', 0.97, 0.48, 1.3], ['lantern', 1.59, 0.83, 0.74], ['steps', 0.67, -0.34, 0.85]],
+  'gorge-lookout': [['lookout', 1.31, 0.82, 1.15], ['stones', 1.92, -0.67, 1.28]],
+  'wooden-ferry': [['boat', 0.03, 0.23, 1.38], ['steps', 0.67, -0.24, 0.92], ['oar', 0.45, 0.99, 0.62, 0.21]],
+  'opposite-shore': [['lookout', -1.41, 0.5, 1.12], ['house', -2.03, 0.09, 0.92], ['stones', -2.45, -0.58, 0.88]],
+  'riverbank-steps': [['steps', 0.59, 0.05, 1.36], ['lookout', 1.17, 0.55, 0.84], ['house', 2.16, -0.44, 0.71]],
+  'ferryman-oar': [['boat', 0.02, 0.31, 1.43], ['boat', 0.23, -1.02, 0.67], ['oar', 0.64, 0.54, 1.11]],
+  'crossing-comparison': [['comparison', 0.94, 0.58, 1.36], ['steps', 0.51, -0.82, 0.89]],
+  'bridge-approach': [['door', 0.94, -0.04, 1.16], ['lookout', 1.66, 0.86, 0.92], ['house', -1.17, 0.85, 0.68]],
+  'iron-chain-study': [['chain', 0.96, 0.62, 1.23], ['steps', 1.25, -0.54, 0.77]],
+  'memory-plaque': [['marker', 1.26, 0.28, 1.38], ['lantern', 1.76, 0.84, 0.72], ['house', 2.1, -0.34, 0.72]],
+  'high-pass': [['snowdrift', 0.25, 0.32, 1.12], ['snowdrift', -0.78, -0.31, 0.86], ['stones', 0.96, 0.6, 1.16]],
+  'marsh-pool': [['pool', 0.06, 0.18, 1.55], ['pool', -1.34, -0.52, 1.36], ['pool', 1.36, 0.51, 1.03]],
+  'leather-belt': [['belt', 0.27, 0.21, 1.44], ['pool', -1.04, -0.31, 0.91], ['pool', 1.49, 0.64, 0.74]],
+};
+
+const woodTone = 0x855738;
+const darkWood = 0x64402a;
+const wallTone = 0xcbb597;
+const stoneTone = 0x797265;
+const shadeTone = 0x424845;
+const accentTone = 0xa0693a;
+
+function buildProp(type, model, kit) {
+  const { box, body } = kit;
+  const block = (tint, x, y, z, width, height, depth, yaw) => box(model, tint, [x, y, z], [width, height, depth], yaw);
+  const simple = (shape, tint, x, y, z, width, height, depth, yaw) => body(model, shape, tint, [x, y, z], [width, height, depth], yaw);
+  const paperStack = (y) => {
+    for (let leaf = 0; leaf < 4; leaf += 1) block(leaf % 2 ? 0xe9d4a5 : 0xf2e1bf, 0.03 * leaf, y + leaf * 0.012, 0, 0.56, 0.018, 0.34, leaf * 0.04);
+    for (let line = 0; line < 5; line += 1) block(0x8e7762, 0.08, y + 0.052, -0.105 + line * 0.045, 0.38 - line * 0.022, 0.006, 0.009, 0.12);
+  };
+  const display = () => {
+    block(shadeTone, 0, 0.047, 0, 1.05, 0.094, 0.65);
+    block(accentTone, 0, 0.13, 0, 0.95, 0.074, 0.55);
+    block(0xd6c1a0, 0, 0.175, 0, 0.89, 0.032, 0.47);
+  };
+
+  switch (type) {
+    case 'house': {
+      block(stoneTone, 0, 0.07, 0, 0.94, 0.14, 0.71);
+      block(wallTone, 0, 0.32, 0, 0.80, 0.43, 0.57);
+      block(darkWood, 0.07, 0.23, 0.29, 0.17, 0.31, 0.032);
+      for (const windowX of [-0.24, 0.29]) {
+        block(darkWood, windowX, 0.39, 0.29, 0.12, 0.12, 0.025);
+        block(0xa58c55, windowX, 0.39, 0.31, 0.065, 0.068, 0.015);
+      }
+      for (const slope of [-1, 1]) {
+        const roof = block(shadeTone, 0, 0.6, slope * 0.16, 0.96, 0.052, 0.42);
+        roof.rotation.x = slope * 0.42;
+        for (let tile = -3; tile <= 3; tile += 1) {
+          const rib = block(0x585d55, tile * 0.118, 0.634, slope * 0.16, 0.036, 0.022, 0.405);
+          rib.rotation.x = slope * 0.42;
+        }
+      }
+      block(0x575950, 0, 0.68, 0, 0.97, 0.045, 0.054);
+      break;
+    }
+    case 'fields':
+      for (let row = 0; row < 6; row += 1) block(row % 2 ? 0x8c8656 : 0xafa06a, row * 0.13 - 0.32, 0.04, 0, 0.10, 0.06, 0.74 - row * 0.035, -0.14);
+      break;
+    case 'steps':
+      for (let step = 0; step < 6; step += 1) block(step % 2 ? 0x99917d : 0xaea38d, step * 0.095, 0.045 + step * 0.041, 0, 0.15, 0.09 + step * 0.08, 0.52);
+      block(stoneTone, 0.54, 0.23, 0.28, 0.047, 0.43, 0.045);
+      block(stoneTone, 0.54, 0.23, -0.28, 0.047, 0.43, 0.045);
+      break;
+    case 'boat': {
+      const bottom = [[0, -0.5], [0.14, -0.29], [0.18, 0.17], [0.09, 0.38], [0, 0.48], [-0.09, 0.38], [-0.18, 0.17], [-0.14, -0.29]];
+      const positions = [];
+      const indices = [];
+      bottom.forEach(([x, z], index) => {
+        const height = index % 4 === 0 ? 0.23 : 0.16;
+        positions.push(x * 0.71, 0.02, z * 0.86, x, height, z);
+        const start = index * 2;
+        const next = (start + 2) % (bottom.length * 2);
+        indices.push(start, start + 1, next, start + 1, next + 1, next);
+      });
+      const hull = new THREE.BufferGeometry();
+      hull.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      hull.setIndex(indices);
+      hull.computeVertexNormals();
+      model.add(new THREE.Mesh(hull, new THREE.MeshLambertMaterial({ color: darkWood, side: THREE.DoubleSide })));
+      block(woodTone, 0, 0.063, 0, 0.2, 0.04, 0.60);
+      for (const z of [-0.23, 0.03, 0.24]) block(0xb27c4b, 0, 0.149, z, 0.31 - Math.abs(z) * 0.14, 0.035, 0.085);
+      const oar = block(wallTone, 0.035, 0.21, 0.03, 0.69, 0.026, 0.042, -0.24);
+      oar.rotation.z = -0.11;
+      break;
+    }
+    case 'lantern':
+      block(stoneTone, 0, 0.065, 0, 0.28, 0.13, 0.26);
+      block(darkWood, 0, 0.31, 0, 0.07, 0.38, 0.07);
+      block(0xffc477, 0, 0.6, 0, 0.21, 0.23, 0.21);
+      block(shadeTone, 0, 0.48, 0, 0.28, 0.057, 0.28);
+      block(shadeTone, 0, 0.75, 0, 0.32, 0.07, 0.32);
+      for (const x of [-1, 1]) for (const z of [-1, 1]) block(woodTone, x * 0.11, 0.61, z * 0.11, 0.048, 0.23, 0.048);
+      break;
+    case 'marker':
+      block(stoneTone, 0, 0.085, 0, 0.64, 0.17, 0.45);
+      block(wallTone, 0, 0.37, -0.05, 0.39, 0.54, 0.17);
+      block(accentTone, 0, 0.5, 0.045, 0.28, 0.17, 0.025);
+      for (let line = 0; line < 4; line += 1) block(shadeTone, 0, 0.493 + line * 0.024, 0.06, 0.18, 0.011, 0.01);
+      break;
+    case 'lookout':
+    case 'door':
+      block(stoneTone, 0, 0.05, 0, 0.92, 0.10, 0.53);
+      for (const side of [-1, 1]) block(darkWood, side * 0.31, 0.31, 0, 0.065, 0.6, 0.08);
+      block(woodTone, 0, 0.55, 0, 0.71, 0.095, 0.095);
+      if (type === 'door') {
+        for (const side of [-1, 1]) {
+          const top = block(shadeTone, 0, 0.67, side * 0.16, 0.89, 0.066, 0.42);
+          top.rotation.x = side * 0.36;
+        }
+      }
+      break;
+    case 'chair':
+      block(woodTone, 0, 0.23, 0, 0.34, 0.055, 0.29);
+      block(darkWood, 0, 0.43, -0.13, 0.33, 0.31, 0.07);
+      for (const x of [-1, 1]) for (const z of [-1, 1]) block(darkWood, x * 0.13, 0.11, z * 0.11, 0.047, 0.22, 0.047);
+      break;
+    case 'papers':
+    case 'desk':
+      if (type === 'desk') {
+        block(woodTone, 0, 0.47, 0, 0.92, 0.11, 0.58);
+        for (const x of [-1, 1]) for (const z of [-1, 1]) block(darkWood, x * 0.36, 0.24, z * 0.21, 0.067, 0.49, 0.067);
+      }
+      paperStack(type === 'desk' ? 0.55 : 0.02);
+      break;
+    case 'stones':
+      for (let index = 0; index < 5; index += 1) simple('stone', index % 2 ? stoneTone : shadeTone, (index - 2) * 0.18, 0.07, Math.sin(index * 1.84) * 0.12, 0.25, 0.16 + 0.021 * index, 0.28, index);
+      break;
+    case 'oar':
+      display();
+      block(0x97643d, -0.04, 0.235, 0, 0.69, 0.045, 0.045, 0.2);
+      block(0xb27c4b, 0.31, 0.238, -0.075, 0.26, 0.045, 0.114, 0.2);
+      break;
+    case 'comparison':
+      display();
+      block(woodTone, -0.26, 0.243, 0, 0.33, 0.09, 0.17, 0.23);
+      block(shadeTone, 0.27, 0.26, 0, 0.35, 0.054, 0.075);
+      for (const post of [0.11, 0.43]) block(stoneTone, post, 0.237, 0, 0.045, 0.11, 0.13);
+      break;
+    case 'chain':
+      display();
+      for (let link = -2; link <= 2; link += 1) {
+        const ring = simple('ring', shadeTone, link * 0.16, 0.27, 0, 0.24, 0.135, 0.19, 0);
+        ring.rotation.x = link % 2 ? Math.PI / 2 : 0;
+      }
+      break;
+    case 'belt':
+      display();
+      for (let section = 0; section < 9; section += 1) {
+        const angle = section * 0.41 - 1.64;
+        block(0x743922, Math.sin(angle) * 0.30, 0.239, Math.cos(angle) * 0.158 - 0.048, 0.116, 0.065, 0.086, angle * 0.65);
+      }
+      for (const dot of [-0.07, 0.03, 0.12]) simple('post', 0x3a281e, dot, 0.274, 0.10, 0.029, 0.006, 0.029);
+      break;
+  }
+}
+
+function buildLandscapeProp(type, model, kit, terrain) {
+  const snow = type === 'snowdrift';
+  const { x, y, z } = model.position;
+  const { x: scale } = model.scale;
+  const ground = (u, v) => (terrain.heightAt(x + u * scale, z + v * scale) - y) / scale;
+  const positions = [0, ground(0, 0) + 0.028, 0];
+  const colors = [];
+  const faces = [];
+  const segments = 24;
+  const tint = new THREE.Color(snow ? 0xe8ecde : 0x75938c);
+  const edgeTint = new THREE.Color(snow ? 0xd0d6c5 : 0x526d66);
+  colors.push(tint.r, tint.g, tint.b);
+  for (const [ringIndex, radius] of [0.33, 0.66, 1].entries()) {
+    for (let segment = 0; segment < segments; segment += 1) {
+      const angle = 2 * Math.PI * segment / segments;
+      const shape = radius * (0.88 + Math.sin(angle * 3 + x) * 0.11 + Math.cos(angle * 7 + z) * 0.056);
+      const u = Math.cos(angle) * shape * (snow ? 0.62 : 0.57);
+      const v = Math.sin(angle) * shape * (snow ? 0.33 : 0.39);
+      positions.push(u, ground(u, v) + (snow ? 0.043 : 0.026), v);
+      const color = tint.clone().lerp(edgeTint, radius * radius * (0.72 + Math.sin(angle + 2) * 0.12));
+      colors.push(color.r, color.g, color.b);
+      const first = 1 + ringIndex * segments + segment;
+      const next = 1 + ringIndex * segments + (segment + 1) % segments;
+      if (ringIndex === 0) faces.push(0, next, first);
+      else faces.push(first - segments, next, first, first - segments, next - segments, next);
+    }
+  }
+  const patch = new THREE.BufferGeometry();
+  patch.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  patch.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  patch.setIndex(faces);
+  patch.computeVertexNormals();
+  model.add(new THREE.Mesh(patch, new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide })));
+  if (snow) return;
+  for (let index = 0; index < 16; index += 1) {
+    const angle = index * Math.PI / 8;
+    const u = Math.cos(angle) * (0.48 + Math.sin(index) * 0.04);
+    const v = Math.sin(angle) * (0.35 + Math.cos(index) * 0.04);
+    const height = 0.07 + (index % 4) * 0.023;
+    const reed = kit.box(model, index % 2 ? 0xa2935d : 0x7e753f,
+      [u, ground(u, v) + height / 2, v], [0.013, height, 0.01], angle);
+    reed.rotation.z = 0.34 * Math.sin(index);
+  }
+}
+
+function makePhaseExhibits(terrain, landmark, chapter, variant, water) {
+  const kit = exhibitBuilder();
+  return exhibitPhases[chapter.id].map((phase, phaseIndex) => {
+    if (phase.variant && phase.variant !== variant) return null;
+    const layout = phaseLayouts[phase.setting];
+    const phaseGroup = new THREE.Group();
+    phaseGroup.visible = false;
+    layout.forEach(([type, across, along, scale, yaw = 0, height]) => {
+      const rotate = water && !water.acrossX;
+      const x = landmark.x + (rotate ? along : across);
+      const z = landmark.z + (rotate ? across : along);
+      const model = new THREE.Group();
+      model.position.set(x, height === undefined ? terrain.heightAt(x, z) + 0.04 : landmark.y + height, z);
+      model.rotation.y = yaw + (rotate ? -Math.PI / 2 : 0);
+      model.scale.setScalar(scale);
+      if (type === 'snowdrift' || type === 'pool') buildLandscapeProp(type, model, kit, terrain);
+      else buildProp(type, model, kit);
+      phaseGroup.add(model);
+    });
+    const [first] = phaseGroup.children;
+    const landscapeOrInterior = ['high-pass', 'marsh-pool', 'meeting-table'].includes(phase.setting);
+    if (!landscapeOrInterior) {
+      const ring = kit.body(phaseGroup, 'guide', [0xb5915c, 0xe9b870, 0xb99054][phaseIndex],
+        [first.position.x, first.position.y + 0.024, first.position.z], [1.24, 1.24, 0.38]);
+      ring.rotation.x = Math.PI / 2;
+    }
+    terrain.group.add(phaseGroup);
+    return phaseGroup;
+  });
 }
 
 function addVegetation(terrain, kind, water) {
@@ -442,7 +759,7 @@ export function createTerrainStage(canvas, {
   } catch {
     return {
       async setChapter(_chapter, { variant = 'primary' } = {}) { onState({ status: 'unavailable', variant }); },
-      setView() {}, setActiveHotspot() {}, resetView() {}, dispose() {},
+      setView() {}, setActiveHotspot() {}, setPhase() {}, setPlaying() {}, resetView() {}, dispose() {},
     };
   }
 
@@ -452,6 +769,9 @@ export function createTerrainStage(canvas, {
   const key = new THREE.DirectionalLight(0xfff0d6, 2.15);
   key.position.set(-5, 10, -6);
   scene.add(key);
+  const fill = new THREE.DirectionalLight(0xf1e3cb, 0.56);
+  fill.position.set(5, 3, 9);
+  scene.add(fill);
   const camera = new THREE.PerspectiveCamera(39, 1, 0.04, 80);
   const controls = new OrbitControls(camera, canvas);
   controls.minDistance = 1.3;
@@ -469,16 +789,44 @@ export function createTerrainStage(canvas, {
   let viewportHeight = 300;
   let viewName = 'overview';
   let activeIndex = -1;
+  let phaseIndex = 0;
+  let transition;
+  let cameraMotion;
+  let playing = false;
+  let playRate = 1;
   let pointerStart;
   let contextLost = false;
   let disposed = false;
   const raycaster = new THREE.Raycaster();
   const spherical = new THREE.Spherical();
+  const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
 
   function requestRender() {
     if (frame || contextLost || disposed) return;
-    frame = requestAnimationFrame(() => {
+    frame = requestAnimationFrame((now) => {
       frame = 0;
+      if (transition) {
+        const elapsed = transition.start === undefined ? 0 : now - transition.start;
+        transition.start ??= now;
+        const progress = reducedMotion?.matches || canvas.hidden ? 1 : Math.min(elapsed / 360, 1);
+        const ease = 1 - (1 - progress) ** 3;
+        transition.group.position.y = -0.09 * (1 - ease);
+        key.color.lerpColors(transition.from, transition.to, ease);
+        if (progress < 1) requestRender();
+        else transition = undefined;
+      }
+      if (cameraMotion) {
+        const motion = cameraMotion;
+        motion.elapsed += Math.max(0, now - (motion.lastFrame ?? now)) * playRate;
+        motion.lastFrame = now;
+        const progress = reducedMotion?.matches || canvas.hidden ? 1 : Math.min(motion.elapsed / 840, 1);
+        const ease = progress * progress * (3 - 2 * progress);
+        controls.target.lerpVectors(motion.fromTarget, motion.target, ease);
+        camera.position.lerpVectors(motion.fromEye, motion.eye, ease);
+        controls.update();
+        if (progress < 1) requestRender();
+        else cameraMotion = undefined;
+      }
       const cameraScale = 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) / viewportHeight;
       current?.markers.forEach(marker => {
         marker.scale.setScalar(cameraScale * (marker.userData.index === activeIndex ? 36 : 30));
@@ -498,32 +846,53 @@ export function createTerrainStage(canvas, {
     renderer.setSize(width, height, false);
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
-    if (current && viewName === 'overview') setView('overview');
+    if (current && viewName === 'overview') setView('overview', true);
     requestRender();
   }
 
-  function setView(name) {
+  function setView(name, immediate = false) {
     viewName = name;
     if (!current) return;
     const { landmark, terrain } = current;
     const aspectFit = Math.max(1, 1.35 / camera.aspect);
+    const target = new THREE.Vector3();
+    const eye = new THREE.Vector3();
     if (name === 'ground') {
-      controls.target.set(landmark.x, landmark.y + 0.32, landmark.z);
+      target.set(landmark.x, landmark.y + 0.32, landmark.z);
       const x = landmark.x + 2.7;
       const z = landmark.z + 2.35;
       const height = Math.max(landmark.y + 0.95, terrain.heightAt(x, z) + 0.72);
-      camera.position.set(x, height, z);
+      eye.set(x, height, z);
     } else if (name === 'detail') {
       const modelCenter = current.kind === 'hall' ? 0.93 : 0.38;
-      controls.target.set(landmark.x, landmark.y + modelCenter, landmark.z);
-      const x = landmark.x + 2.45 * aspectFit;
-      const z = landmark.z + 3.22 * aspectFit;
-      camera.position.set(x, Math.max(landmark.y + 2.25, terrain.heightAt(x, z) + 0.8), z);
+      target.set(landmark.x, landmark.y + modelCenter, landmark.z);
+      const x = landmark.x + 2.78 * aspectFit;
+      const z = landmark.z + 3.63 * aspectFit;
+      eye.set(x, Math.max(landmark.y + 2.6, terrain.heightAt(x, z) + 0.8), z);
     } else {
-      controls.target.set(0, -0.48, 0);
-      camera.position.set(12.95 * aspectFit, 13.81 * aspectFit, 16.29 * aspectFit);
+      target.set(0, -0.96, 0);
+      eye.set(12.95 * aspectFit, 13.81 * aspectFit, 16.29 * aspectFit);
     }
-    controls.update();
+    const guided = playing && !immediate && !canvas.hidden && !reducedMotion?.matches;
+    const focus = current.activeGroup?.children[0]?.position;
+    if (focus && (guided || name === 'detail')) {
+      const weight = name === 'overview' ? 0.16 : 0.48;
+      const shiftX = clamp((focus.x - target.x) * weight, -0.7, 0.7);
+      const shiftZ = clamp((focus.z - target.z) * weight, -0.7, 0.7);
+      target.x += shiftX;
+      target.z += shiftZ;
+      eye.x += shiftX;
+      eye.z += shiftZ;
+      eye.y = Math.max(eye.y, terrain.heightAt(eye.x, eye.z) + 0.66);
+    }
+    if (guided) {
+      cameraMotion = { fromTarget: controls.target.clone(), fromEye: camera.position.clone(), target, eye, elapsed: 0 };
+    } else {
+      cameraMotion = undefined;
+      controls.target.copy(target);
+      camera.position.copy(eye);
+      controls.update();
+    }
     requestRender();
   }
 
@@ -536,6 +905,50 @@ export function createTerrainStage(canvas, {
     requestRender();
   }
 
+  function setPhase(index, animate = true) {
+    if (!Number.isInteger(index) || index < 0 || index > 2) return;
+    phaseIndex = index;
+    if (!current || current.activePhase === index) return;
+    current.activePhase = index;
+    const group = current.phases[index] ?? current.phases.find(Boolean);
+    current.activeGroup = group;
+    current.phases.filter(Boolean).forEach(phase => {
+      phase.visible = phase === group;
+      phase.position.y = 0;
+    });
+    const light = (sceneLighting[current.kind] ?? neutralLight)[index];
+    if (animate && !reducedMotion?.matches && !canvas.hidden) {
+      transition = { group, from: key.color.clone(), to: new THREE.Color(light) };
+      group.position.y = -0.09;
+      if (playing) setView(viewName);
+    } else {
+      transition = undefined;
+      key.color.setHex(light);
+    }
+    requestRender();
+  }
+
+  function stopGuide() {
+    cameraMotion = undefined;
+  }
+
+  function setPlaying(next, speed = 1) {
+    const wasPlaying = playing;
+    playing = Boolean(next);
+    playRate = clamp(Number(speed) || 1, 0.5, 2);
+    if (playing) {
+      if (!wasPlaying && current && !reducedMotion?.matches) setView(viewName);
+    } else {
+      stopGuide();
+      if (transition) {
+        transition.group.position.y = 0;
+        key.color.copy(transition.to);
+        transition = undefined;
+        requestRender();
+      }
+    }
+  }
+
   async function setChapter(chapter, { variant = 'primary' } = {}) {
     if (disposed) return;
     loadController?.abort();
@@ -543,6 +956,8 @@ export function createTerrainStage(canvas, {
     loadController = controller;
     if (current) disposeGroup(current.terrain.group);
     current = null;
+    transition = undefined;
+    stopGuide();
     status = { status: 'loading', variant };
     if (!contextLost) onState(status);
     requestRender();
@@ -566,12 +981,15 @@ export function createTerrainStage(canvas, {
     const terrain = makeTerrain(data, chapter, theme);
     const surveyLine = makeSurveyLine(terrain, theme);
     const landmark = makeLandmark(terrain, chapter, surveyLine);
+    addCabinet(terrain, chapter);
     addVegetation(terrain, kind, surveyLine);
+    const phases = makePhaseExhibits(terrain, landmark, chapter, variant, surveyLine);
     const markers = createMarkers(terrain, landmark, { ...chapter, kind });
     scene.add(terrain.group);
-    current = { terrain, landmark, markers, kind };
-    setView(viewName);
+    current = { terrain, landmark, markers, phases, kind };
+    setView(viewName, true);
     setActiveHotspot(activeIndex);
+    setPhase(phaseIndex, false);
     status = { status: fallback ? 'fallback' : 'ready', source: data.source, variant };
     if (!contextLost) onState(status);
   }
@@ -597,6 +1015,7 @@ export function createTerrainStage(canvas, {
   function handleKeys(event) {
     if (!current || !['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', '+', '=', '-'].includes(event.key)) return;
     event.preventDefault();
+    stopGuide();
     spherical.setFromVector3(camera.position.clone().sub(controls.target));
     if (event.key === 'ArrowLeft') spherical.theta -= 0.12;
     if (event.key === 'ArrowRight') spherical.theta += 0.12;
@@ -626,6 +1045,7 @@ export function createTerrainStage(canvas, {
   const resizeObserver = new ResizeObserver(resize);
   resizeObserver.observe(canvas);
   controls.addEventListener('change', requestRender);
+  controls.addEventListener('start', stopGuide);
   canvas.addEventListener('pointerdown', startPointer);
   canvas.addEventListener('pointerup', selectPointer);
   canvas.addEventListener('keydown', handleKeys);
@@ -634,8 +1054,8 @@ export function createTerrainStage(canvas, {
   resize();
 
   return {
-    setChapter, setView, setActiveHotspot,
-    resetView() { setView('overview'); },
+    setChapter, setView, setActiveHotspot, setPhase, setPlaying,
+    resetView() { setView('overview', true); },
     dispose() {
       disposed = true;
       loadController?.abort();
